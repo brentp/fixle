@@ -9,6 +9,8 @@ cdef extern from "ltoa.h":
     char * ltoa(int64_t v, char *s)
 cdef extern from "stdlib.h":
     int64_t atol(char *)
+    double atof(char *)
+    int sprintf(char *str, const_char_star fmt, ...)
 
 
 
@@ -260,4 +262,26 @@ cdef class FixleLong(Fixle):
         if vo == NULL:
             raise IndexError(str(id))
         return atol(<char *>vo)
+
+
+cdef class FixleDouble(Fixle):
+
+    cdef set(self, int64_t id, val):
+        cdef int sp
+        cdef double v = val
+        cdef char buffer[24]
+
+        if self.read_only:
+            raise FixleException("can't setitem with file opened readonly\n"
+                                 "%s[%i] = %s" % (self.path, id, v))
+        sprintf(buffer, "%lf", v)
+        tcfdbput(self.fdb, id + 1, buffer, stdlib.strlen(buffer))
+
+    cdef getone(self, int64_t id):
+        cdef int sp
+        cdef void* vo = tcfdbget(self.fdb, id, &sp) 
+        if vo == NULL:
+            raise IndexError(str(id))
+        return atof(<char *>vo)
+
 

@@ -1,6 +1,6 @@
 import unittest
 import os
-from fixle import Fixle, FixleException, FixleLong
+from fixle import Fixle, FixleException, FixleLong, FixleDouble
 
 class FixleTest(unittest.TestCase):
     list = ["asdf", "bbbb", "a\0a"]
@@ -92,6 +92,7 @@ def _cleanup():
     import time
     time.sleep(0.1)
 
+
 class FixleLongTest(unittest.TestCase):
     def setUp(self):
         self.f = FixleLong('./t.fldb', mode='w', width=8)
@@ -120,6 +121,23 @@ class FixleLongTest(unittest.TestCase):
     def tearDown(self):
         self.f.clear()
         del self.f
+
+class FixleDoubleText(FixleLongTest):
+
+    def setUp(self):
+        self.f = FixleDouble('./t.fldb', mode='w', width=22)
+        self.f.clear()
+        for i in range(100):
+            self.f[i] = i * 99.99
+
+    def test_get(self):
+        self.assertAlmostEqual(self.f[3], 3 * 99.99)
+        self.assertAlmostEqual(self.f[9], 9 * 99.99)
+        self.assertAlmostEqual(self.f[0], 0 * 99.99)
+        self.assertAlmostEqual(self.f[99], 99 * 99.99)
+
+    def test_range(self):
+        pass
 
 class FixlePickle(FixleTest):
     list = ["asdf", (1, 2, 3, 4), (range(3), {"a": 4})]

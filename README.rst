@@ -67,6 +67,12 @@ there is also a class for storing longs/ints:
 
     >>> import os; os.unlink('t.fdb'); os.unlink('tl.fdb')
 
+
+and another for doubles/floats.
+::
+
+    >>> from fixle import FixleDouble
+
 speed
 =====
 
