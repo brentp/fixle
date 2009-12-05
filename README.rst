@@ -54,6 +54,19 @@ can also be used like a shelve where the values are pickled.
     >>> fdb[2]
     {'a': 2, 'b': [2, 3, 4]}
 
+there is also a class for storing longs/ints:
+::
+
+    >>> from fixle import FixleLong
+    >>> fdb = FixleLong('tl.fdb', 'w')
+    >>> for i in range(1000):
+    ...     fdb[i] = i * 10000000000
+
+    >>> fdb[222]
+    2220000000000
+
+    >>> import os; os.unlink('t.fdb'); os.unlink('tl.fdb')
+
 speed
 =====
 
@@ -61,6 +74,12 @@ Fixle should be very fast, run
 ::
 
     $ python tests/bench.py b
+
+testing
+=======
+::
+   
+    $ python setup.py nosetests
 
 to see it compared to shelve and bsddb. seems to be
 about 10x faster even when pickling the entries, but NOTE that
