@@ -7,6 +7,7 @@ cdef extern from *:
 
 cdef extern from "ltoa.h":
     char * ltoa(int64_t v, char *s)
+
 cdef extern from "stdlib.h":
     int64_t atol(char *)
     double atof(char *)
@@ -257,11 +258,29 @@ cdef class FixleLong(Fixle):
         tcfdbput(self.fdb, id + 1, buffer, stdlib.strlen(buffer))
 
     cdef getone(self, int64_t id):
+        return self.getlong(id)
+
+    cdef inline int64_t getlong(self, int64_t id):
         cdef int sp
         cdef void* vo = tcfdbget(self.fdb, id, &sp) 
         if vo == NULL:
             raise IndexError(str(id))
         return atol(<char *>vo)
+
+    def get(self, int64_t i):
+        return self.getlong(i + 1)
+
+    def getlongrange(self, int64_t start, int64_t stop):
+        cdef int np, 
+        cdef int64_t i
+        cdef uint64_t *idxs = tcfdbrange(self.fdb, start + 1, stop, -1, &np)
+        if idxs == NULL:
+            return handle_error(self.fdb)
+
+        # TODO: make this a numpy array?
+        cdef list items = [self.getlong(idxs[i]) for i in range(np)]
+        stdlib.free(idxs)
+        return items
 
 
 cdef class FixleDouble(Fixle):
@@ -269,7 +288,7 @@ cdef class FixleDouble(Fixle):
     cdef set(self, int64_t id, val):
         cdef int sp
         cdef double v = val
-        cdef char buffer[24]
+        cdef char buffer[32]
 
         if self.read_only:
             raise FixleException("can't setitem with file opened readonly\n"
@@ -278,10 +297,26 @@ cdef class FixleDouble(Fixle):
         tcfdbput(self.fdb, id + 1, buffer, stdlib.strlen(buffer))
 
     cdef getone(self, int64_t id):
+        return self.getdouble(id)
+
+    cdef inline double getdouble(self, int64_t id):
         cdef int sp
         cdef void* vo = tcfdbget(self.fdb, id, &sp) 
         if vo == NULL:
             raise IndexError(str(id))
         return atof(<char *>vo)
 
+    def get(self, int64_t i):
+        return self.getdouble(i + 1)
 
+    def getdoublerange(self, int64_t start, int64_t stop):
+        cdef int np, 
+        cdef int64_t i
+        cdef uint64_t *idxs = tcfdbrange(self.fdb, start + 1, stop, -1, &np)
+        if idxs == NULL:
+            return handle_error(self.fdb)
+
+        # TODO: make this a numpy array?
+        cdef list items = [self.getdouble(idxs[i]) for i in range(np)]
+        stdlib.free(idxs)
+        return items

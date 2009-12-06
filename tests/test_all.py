@@ -125,7 +125,7 @@ class FixleLongTest(unittest.TestCase):
 class FixleDoubleText(FixleLongTest):
 
     def setUp(self):
-        self.f = FixleDouble('./t.fldb', mode='w', width=22)
+        self.f = FixleDouble('./t.fldb', mode='w', width=32)
         self.f.clear()
         for i in range(100):
             self.f[i] = i * 99.99
@@ -136,8 +136,16 @@ class FixleDoubleText(FixleLongTest):
         self.assertAlmostEqual(self.f[0], 0 * 99.99)
         self.assertAlmostEqual(self.f[99], 99 * 99.99)
 
+    def test_double(self):
+        self.assertAlmostEqual(self.f.get(3), 3 * 99.99)
+        self.assertAlmostEqual(self.f.get(9), 9 * 99.99)
+        self.assertAlmostEqual(self.f.get(0), 0 * 99.99)
+        self.assertAlmostEqual(self.f.get(99), 99 * 99.99)
+
     def test_range(self):
-        pass
+        found = self.f.getdoublerange(3, 6)
+        for f, should_b in zip(found, [x * 99.99 for x in range(3, 6)]):
+            self.assertAlmostEqual(f, should_b)
 
 class FixlePickle(FixleTest):
     list = ["asdf", (1, 2, 3, 4), (range(3), {"a": 4})]
