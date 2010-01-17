@@ -1,11 +1,12 @@
 import unittest
 import os
 from fixle import Fixle, FixleException, FixleLong, FixleDouble
+import sys
 
 class FixleTest(unittest.TestCase):
     list = ["asdf", "bbbb", "a\0a"]
     def setUp(self):
-        _cleanup()
+        #_cleanup()
         self.f = Fixle("./t.fdb", mode='w')
         for i, v in enumerate(self.list):
             self.f[i] = v
@@ -52,6 +53,7 @@ class FixleTest(unittest.TestCase):
     def tearDown(self):
         self.f.clear()
         del self.f
+        _cleanup()
 
     def test_index(self):
         self.assertRaises(IndexError, self.f.__getitem__, 10)
@@ -86,15 +88,16 @@ class FixleTest(unittest.TestCase):
         self.assertEqual(f[0], self.list[0])
 
 
+import time
 def _cleanup():
-    try: os.unlink('./t.fdb')
-    except: pass
-    import time
+    for f in ('./t.fdb', './t.pickle.fdb', './t.fldb'):
+        try: os.unlink(f)
+        except: pass
     time.sleep(0.1)
-
 
 class FixleLongTest(unittest.TestCase):
     def setUp(self):
+        _cleanup()
         self.f = FixleLong('./t.fldb', mode='w', width=8)
         for i in range(100):
             self.f[i] =i
@@ -121,10 +124,12 @@ class FixleLongTest(unittest.TestCase):
     def tearDown(self):
         self.f.clear()
         del self.f
+        _cleanup()
 
 class FixleDoubleText(FixleLongTest):
 
     def setUp(self):
+        _cleanup()
         self.f = FixleDouble('./t.fldb', mode='w', width=32)
         self.f.clear()
         for i in range(100):
@@ -146,11 +151,15 @@ class FixleDoubleText(FixleLongTest):
         found = self.f.getdoublerange(3, 6)
         for f, should_b in zip(found, [x * 99.99 for x in range(3, 6)]):
             self.assertAlmostEqual(f, should_b)
-
+"""
 class FixlePickle(FixleTest):
     list = ["asdf", (1, 2, 3, 4), (range(3), {"a": 4})]
     def setUp(self):
-        self.f = Fixle("./t.fdb", mode='w', pickle=True)
+        print >>sys.stderr, "OKA"
+        sys.stderr.flush()
+        self.f = Fixle("./t.pickle.fdb", mode='w', pickle=True)
+        print >>sys.stderr, "OKB"
+        sys.stderr.flush()
         for i, v in enumerate(self.list):
             self.f[i] = v
 
@@ -158,11 +167,16 @@ class FixlePickle(FixleTest):
 
     def test_read(self):
         self.f.close()
-        self.f = Fixle("./t.fdb", mode="r", pickle=True)
+        del self.f
+        print >>sys.stderr, "OKREAD"
+        self.f = Fixle("./t.pickle.fdb", mode="r", pickle=True)
         self.assertEquals(self.f[1], self.list[1])
 
         self.assertRaises(FixleException, self.f.__setitem__, 1, "g")
 
+    def tearDown(self):
+        _cleanup()
+        """
+
 if __name__ == "__main__":
     unittest.main()
-    os.unlink("t.fdb")

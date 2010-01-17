@@ -17,6 +17,7 @@ cdef extern from "stdlib.h":
 
 cimport python_string as ps
 cimport stdlib
+import sys
 import cPickle
 
 # subjract 1 here as it gets added in get/set()
@@ -76,36 +77,26 @@ cdef handle_error(TCFDB *fdb):
     cdef int e = tcfdbecode(fdb)
     raise FixleException(tcfdberrmsg(e))
 
-
-    
-cdef class Fixle:
+cdef class FixleSimple:
     cdef TCFDB *fdb
     cdef readonly path
     cdef bint read_only
-    cdef bint pickle
-    cdef int32_t changes
-    cdef int64_t CHANGE_ON
-    cdef int32_t MAX_WIDTH
 
-    def __cinit__(self, path, mode='r', bint pickle=False, int32_t width=-1, int64_t n_records=-1):
+    def __cinit__(self, path, mode='r', int32_t width=-1, int64_t n_records=-1):
         self.fdb = tcfdbnew()
         cdef bint success
-        self.pickle = pickle
         self.path = path
         self.read_only = mode[0] == 'r'
-        self.CHANGE_ON = n_records if n_records > -1 else 5000000
-        self.MAX_WIDTH = 16
         cdef int mw = FDBOWRITER | FDBOCREAT #| FDBONOLCK # | FDBOLCKNB
         if (width, n_records) != (-1, -1):
             self.tune(width, n_records)
         success = tcfdbopen(self.fdb, path, mw if mode in "cw" else FDBOREADER)
         if not success:
             handle_error(self.fdb)
-        self.changes = 0
 
     def tune(self, int32_t width=-1, int64_t n_records=-1):
         if width == -1:
-            width = max(tcfdbvsiz(self.fdb, FDBIDMAX), 128 if self.pickle else 32)
+            width = max(tcfdbvsiz(self.fdb, FDBIDMAX), 32)
         if n_records == -1:
             n_records = len(self) + 1
         cdef int64_t limsiz = n_records * (width + 4)
@@ -117,51 +108,27 @@ cdef class Fixle:
     def optimize(self, int32_t width=-1, int64_t n=-1):
         if self.read_only:
             return False
-
-        if n == -1:
-            n = len(self)
-        if width == -1:
-            width = tcfdbvsiz(self.fdb, FDBIDMAX)
-
-        if width > self.MAX_WIDTH:
-            self.MAX_WIDTH = width
-
         cdef int64_t limsiz = n * (width + 4)
         success = tcfdboptimize(self.fdb, width, limsiz)
         if not success:
             handle_error(self.fdb)
-        self.changes = 0
-
-    def autooptimize(self):
-        cdef int32_t width = tcfdbvsiz(self.fdb, FDBIDMAX + 1) + 4
-        cdef int nrecs = <int>(len(self) + self.CHANGE_ON + 1)
-        self.optimize(width, nrecs)
-
 
     def __len__(self):    
         return tcfdbrnum(self.fdb)
 
     def __setitem__(self, int64_t id, v):
-        self.changes += 1
-        if self.changes >= self.CHANGE_ON:
-            self.autooptimize()
         self.set(id, v)
 
-
     cdef set(self, int64_t id, v):
-
         if self.read_only:
             raise FixleException("can't setitem with file opened readonly\n"
                                  "%s[%i] = %s" % (self.path, id, v))
-
         cdef Py_ssize_t vsiz
         if self.pickle:
             v = cPickle.dumps(v, -1)
 
         cdef char *vbuf
         ps.PyString_AsStringAndSize(v, &vbuf, &vsiz)
-        if vsiz > self.MAX_WIDTH:
-            self.optimize(width=vsiz + 1)
         tcfdbput(self.fdb, id + 1, vbuf, <int>vsiz)
 
     cdef getone(self, int64_t id):
@@ -170,27 +137,10 @@ cdef class Fixle:
         if v == NULL:
             raise IndexError(str(id))
         item = ps.PyString_FromStringAndSize(<char *>v, sp)
-        return cPickle.loads(item) if self.pickle else item
+        return item
 
     def __getitem__(self, slice):
-        if isinstance(slice, (int, long)):
-            return self.getone(slice + 1)
-        if slice.start is None: 
-            return self.getrange(1, slice.stop + 1)
-        elif slice.stop is None:
-            return self.getrange(slice.start + 1,  FDBIDMAX + 2)
-        else:
-            return self.getrange(slice.start + 1, slice.stop + 1)
-
-    cpdef getrange(self, int64_t start, int64_t end):
-        cdef int np, i
-        cdef uint64_t *vals = tcfdbrange(self.fdb, start, end - 1, -1, &np)
-        if vals == NULL:
-            return handle_error(self.fdb)
-
-        cdef list items = [self.getone(vals[i]) for i in range(np)]
-        stdlib.free(vals)
-        return items
+        return self.getone(slice + 1)
 
     def items(self, int64_t start=-2, int64_t end=-2):
         cdef int np, i
@@ -243,6 +193,107 @@ cdef class Fixle:
         else:
             raise StopIteration
 
+    
+cdef class Fixle(FixleSimple):
+    cdef bint pickle
+    cdef int32_t changes
+    cdef int64_t CHANGE_ON
+    cdef int32_t MAX_WIDTH
+
+    def __cinit__(self, path, mode='r', pickle=False, int32_t width=-1, int64_t n_records=-1):
+
+        self.CHANGE_ON = n_records if n_records > -1 else 1000000
+        self.MAX_WIDTH = 128 if pickle else 32 
+        FixleSimple.__init__(self, path, mode=mode, width=self.MAX_WIDTH,
+                             n_records=self.CHANGE_ON)
+        self.changes = 0
+        self.pickle = pickle
+
+    def optimize(self, int32_t width=-1, int64_t n=-1):
+        if self.read_only: return False
+
+        # TODO: dont set n every time!
+        # this method currently gets called
+        # from setitem when widht > MAX_WIDTH
+        # the n is reset to len(self), so it
+        # will be called every time!
+        cdef int64_t limsiz = - 1
+
+        if n == -1 and width == -1: 
+            n = len(self)
+            limsiz = n * (width + 4)
+
+        if width == -1:
+            width = tcfdbvsiz(self.fdb, FDBIDMAX)
+
+        if width > self.MAX_WIDTH:
+            self.MAX_WIDTH = width
+
+        #sys.stderr.write("becomes\nwidth:%i, limsiz:%i\n\n" % (width, limsiz))
+        #sys.stderr.flush()
+        success = tcfdboptimize(self.fdb, width, limsiz)
+        if not success:
+            handle_error(self.fdb)
+        self.changes = 0
+
+    def autooptimize(self):
+        cdef int32_t width = tcfdbvsiz(self.fdb, FDBIDMAX + 1) + 4
+        cdef int nrecs = <int>(len(self) + self.CHANGE_ON + 1)
+        self.optimize(width, nrecs)
+
+
+    def __setitem__(self, int64_t id, v):
+        self.changes += 1
+        if self.changes >= self.CHANGE_ON:
+            self.autooptimize()
+        self.set(id, v)
+
+
+    cdef set(self, int64_t id, v):
+
+        if self.read_only:
+            raise FixleException("can't setitem with file opened readonly\n"
+                                 "%s[%i] = %s" % (self.path, id, v))
+
+        cdef Py_ssize_t vsiz
+        if self.pickle:
+            v = cPickle.dumps(v, -1)
+        cdef char *vbuf
+        ps.PyString_AsStringAndSize(v, &vbuf, &vsiz)
+        if vsiz > self.MAX_WIDTH:
+            self.optimize(width=vsiz + 1)
+        tcfdbput(self.fdb, id + 1, vbuf, <int>vsiz)
+
+    cdef getone(self, int64_t id):
+        item = FixleSimple.getone(self, id)
+        return cPickle.loads(item) if self.pickle else item
+
+    def __getitem__(self, slice):
+        if isinstance(slice, (int, long)):
+            return self.getone(slice + 1)
+        if slice.start is None: 
+            return self.getrange(1, slice.stop + 1)
+        elif slice.stop is None:
+            return self.getrange(slice.start + 1,  FDBIDMAX + 2)
+        else:
+            return self.getrange(slice.start + 1, slice.stop + 1)
+
+    cpdef getrange(self, int64_t start, int64_t end):
+        cdef int np, i
+        cdef uint64_t *vals = tcfdbrange(self.fdb, start, end - 1, -1, &np)
+        if vals == NULL:
+            return handle_error(self.fdb)
+
+        cdef list items = [self.getone(vals[i]) for i in range(np)]
+        stdlib.free(vals)
+        return items
+
+    cpdef keys(self):
+        cdef int np, i
+        cdef uint64_t *vals = tcfdbrange(self.fdb, -1, -3, -1, &np)
+        cdef list items = [vals[i] - 1 for i in range(np)]
+        stdlib.free(vals)
+        return items
 
 cdef class FixleLong(Fixle):
 
